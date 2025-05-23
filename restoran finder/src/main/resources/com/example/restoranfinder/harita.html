@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Yakındaki Kafe ve Restoranlar</title>
+    <meta charset="utf-8">
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        .gm-style .info-window {
+            max-width: 300px !important;
+            padding: 10px;
+        }
+        .place-image {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .directions-btn {
+            background: #4285F4;
+            color: white;
+            border: none;
+            padding: 8px;
+            margin-top: 10px;
+            cursor: pointer;
+            border-radius: 4px;
+            width: 100%;
+        }
+        .distance-info {
+            background: #f8f9fa;
+            padding: 8px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .place-type {
+            color: #6c757d;
+            font-size: 14px;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+
+<script>
+    let map;
+    let userLocation;
+    let infoWindow;
+    let directionsService;
+    const serviceTypes = ['cafe', 'restaurant'];
+
+    function initMap() {
+        map = new google.maps.Map(document.getElementById("map"), {
+            zoom: 15,
+            mapTypeControl: false
+        });
+
+        infoWindow = new google.maps.InfoWindow();
+        directionsService = new google.maps.DirectionsService();
+
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                position => {
+                    userLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    };
+
+                    map.setCenter(userLocation);
+
+                    // Kullanıcı konum işaretçisi
+                    new google.maps.Marker({
+                        position: userLocation,
+                        map,
+                        title: "Mevcut Konumunuz",
+                        icon: {
+                            path: google.maps.SymbolPath.CIRCLE,
+                            scale: 8,
+                            fillColor: "#4285F4",
+                            fillOpacity: 1,
+                            strokeWeight: 2,
+                            strokeColor: "white"
+                        }
+                    });
+
+                    // Mekanları yükle
+                    loadPlaces();
+                },
+                error => {
+                    handleLocationError(true);
+                }
+            );
+        } else {
+            handleLocationError(false);
+        }
+    }
+
+    function loadPlaces() {
+        serviceTypes.forEach(type => {
+            const service = new google.maps.places.PlacesService(map);
+            service.nearbySearch(
+                {
+                    location: userLocation,
+                    radius: 1000,
+                    type: type,
+                    openNow: true // Sadece açık olanlar
+                },
+                (results, status) => {
+                    if (status === "OK" && results) {
+                        results.forEach(place => {
+                            if (place.business_status === "OPERATIONAL") {
+                                createMarker(place, type);
+                            }
+                        });
+                    }
+                }
+            );
+        });
+    }
+
+    function createMarker(place, placeType) {
+        if (!place.geometry?.location) return;
+
+        const marker = new google.maps.Marker({
+            map,
+            position: place.geometry.location,
+            title: place.name,
+            icon: {
+                url: `https://maps.google.com/mapfiles/ms/icons/${placeType === 'cafe' ? 'red' : 'yellow'}-dot.png`
+            }
+        });
+
+        marker.addListener("click", () => {
+            showPlaceDetails(place, marker);
+        });
+    }
+
+    async function showPlaceDetails(place, marker) {
+        try {
+            // Place Details API'den detayları çek
+            const service = new google.maps.places.PlacesService(map);
+            service.getDetails({ placeId: place.place_id }, (placeDetails, status) => {
+                if (status === "OK") {
+                    const content = buildInfoWindowContent(placeDetails);
+                    infoWindow.setContent(content);
+                    infoWindow.open(map, marker);
+                    calculateDistance(placeDetails.geometry.location);
+                }
+            });
+        } catch (error) {
+            console.error("Detaylar yüklenemedi:", error);
+        }
+    }
+
+    function buildInfoWindowContent(place) {
+        const type = place.types?.includes('cafe') ? 'Kafe' : 'Restoran';
+        const photo = place.photos?.[0]?.getUrl({ maxWidth: 300, maxHeight: 200 }) || '';
+        const rating = place.rating ? `⭐ ${place.rating}/5 (${place.user_ratings_total} değerlendirme)` : 'Değerlendirme yok';
+
+        return `
+            <div class="info-window">
+                ${photo ? `<img class="place-image" src="${photo}" alt="${place.name}">` : ''}
+                <h3 style="margin:10px 0">${place.name}</h3>
+                <div class="place-type">${type}</div>
+                <p>📍 ${place.vicinity}</p>
+                <p>${rating}</p>
+                <div class="distance-info" id="distance-info">
+                    <span>⏳ Mesafe hesaplanıyor...</span>
+                </div>
+                <button class="directions-btn"
+                    onclick="window.open(
+                        'https://www.google.com/maps/dir/?api=1&destination=${place.geometry.location.lat()},${place.geometry.location.lng()}',
+                        '_blank'
+                    )">🚗 Yol Tarifi Al</button>
+            </div>
+        `;
+    }
+
+    function calculateDistance(destination) {
+        directionsService.route(
+            {
+                origin: userLocation,
+                destination: destination,
+                travelMode: google.maps.TravelMode.DRIVING,
+                unitSystem: google.maps.UnitSystem.METRIC
+            },
+            (response, status) => {
+                const distanceElement = document.getElementById('distance-info');
+                if (status === "OK") {
+                    const distance = response.routes[0].legs[0].distance.text;
+                    const duration = response.routes[0].legs[0].duration.text;
+                    distanceElement.innerHTML = `
+                        <div>📏 Mesafe: ${distance}</div>
+                        <div>⏱️ Tahmini Süre: ${duration}</div>
+                    `;
+                } else {
+                    distanceElement.innerHTML = "Mesafe bilgisi alınamadı";
+                }
+            }
+        );
+    }
+
+    function handleLocationError(browserHasGeolocation) {
+        const content = browserHasGeolocation
+            ? "Konum erişimine izin vermeniz gerekiyor"
+            : "Tarayıcınız konum desteği sunmuyor";
+
+        infoWindow.setContent(content);
+        infoWindow.open(map);
+    }
+</script>
+
+<!-- API KEY'inizi buraya ekleyin -->
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAnykhjgX3UpNufVOvRNaTPRGZb3LK9jV4&libraries=places&callback=initMap" async defer></script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Yakındaki Kafe ve Restoranlar</title>
+    <meta charset="utf-8">
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        .info-window {
+            max-width: 250px;
+            font-family: Arial, sans-serif;
+            padding: 10px;
+        }
+        .directions-btn {
+            background: #4285F4;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            margin-top: 10px;
+            cursor: pointer;
+            border-radius: 4px;
+            width: 100%;
+        }
+        .place-type {
+            color: #5F6368;
+            font-size: 14px;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+
+<script>
+    let map;
+    let infoWindow;
+    const serviceTypes = ['cafe', 'restaurant']; // Sadece bu iki tip
+
+    function initMap() {
+        map = new google.maps.Map(document.getElementById("map"), {
+            zoom: 15,
+        });
+
+        infoWindow = new google.maps.InfoWindow();
+
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                position => {
+                    const userLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                    };
+
+                    map.setCenter(userLocation);
+
+                    // Kullanıcı konum işaretçisi (mavi nokta)
+                    new google.maps.Marker({
+                        position: userLocation,
+                        map,
+                        title: "Şu an buradasınız",
+                        icon: {
+                            path: google.maps.SymbolPath.CIRCLE,
+                            scale: 8,
+                            fillColor: '#4285F4',
+                            fillOpacity: 1,
+                            strokeWeight: 2,
+                            strokeColor: '#ffffff'
+                        }
+                    });
+
+                    // Her bir işletme tipi için ayrı arama yap
+                    serviceTypes.forEach(type => {
+                        const service = new google.maps.places.PlacesService(map);
+                        service.nearbySearch(
+                            {
+                                location: userLocation,
+                                radius: 1000, // 1 km
+                                type: type
+                            },
+                            (results, status) => {
+                                if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+                                    results.forEach(place => {
+                                        if (place.business_status === 'OPERATIONAL') {
+                                            createMarker(place, type);
+                                        }
+                                    });
+                                }
+                            }
+                        );
+                    });
+                },
+                () => {
+                    handleLocationError(true, map.getCenter());
+                }
+            );
+        } else {
+            handleLocationError(false, map.getCenter());
+        }
+    }
+
+    function handleLocationError(browserHasGeolocation, pos) {
+        infoWindow.setPosition(pos);
+        infoWindow.setContent(
+            browserHasGeolocation
+                ? "Konum bilgisi alınamadı"
+                : "Tarayıcınız konum desteği sunmuyor"
+        );
+        infoWindow.open(map);
+    }
+
+    function createMarker(place, placeType) {
+        if (!place.geometry || !place.geometry.location) return;
+
+        // Tipine göre farklı renklerde işaretçiler
+        const iconColor = placeType === 'cafe' ? '#FF5722' : '#4CAF50';
+
+        const marker = new google.maps.Marker({
+            map,
+            position: place.geometry.location,
+            title: place.name,
+            icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: iconColor,
+                fillOpacity: 1,
+                strokeWeight: 1,
+                strokeColor: '#ffffff'
+            }
+        });
+
+        const typeLabel = placeType === 'cafe' ? 'Kafe' : 'Restoran';
+        const address = place.vicinity || "Adres bilgisi yok";
+        const rating = place.rating ? `⭐ ${place.rating}/5` : 'Değerlendirme yok';
+
+        const contentString = `
+            <div class="info-window">
+                <h3>${place.name}</h3>
+                <div class="place-type">${typeLabel}</div>
+                <p>${address}</p>
+                <p>${rating}</p>
+                <button class="directions-btn"
+                    onclick="window.open(
+                        'https://www.google.com/maps/dir/?api=1&destination=${place.geometry.location.lat()},${place.geometry.location.lng()}',
+                        '_blank'
+                    )">Yol Tarifi Al</button>
+            </div>
+        `;
+
+        marker.addListener("click", () => {
+            infoWindow.setContent(contentString);
+            infoWindow.open(map, marker);
+        });
+    }
+</script>
+
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAnykhjgX3UpNufVOvRNaTPRGZb3LK9jV4&libraries=places&callback=initMap" async defer></script>
+</body>
+</html>
