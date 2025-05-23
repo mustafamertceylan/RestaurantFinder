@@ -210,6 +210,50 @@
       infoWindow.setContent(content);
       infoWindow.open(map);
   }
+
+  function createMarker(place, placeType) {
+      if (!place.geometry?.location) return;
+
+      const marker = new google.maps.Marker({
+          map,
+          position: place.geometry.location,
+          title: place.name,
+          icon: {
+              url: `https://maps.google.com/mapfiles/ms/icons/${placeType === 'cafe' ? 'orange' : 'green'}-dot.png`
+          }
+      });
+
+      marker.addListener("click", () => {
+          showPlaceDetails(place, marker);
+      });
+
+      // Java uygulamasına restoran bilgilerini gönder
+      if (window.javaApp) {
+          const distance = google.maps.geometry.spherical.computeDistanceBetween(
+              new google.maps.LatLng(userLocation),
+              new google.maps.LatLng(place.geometry.location)
+          ) / 1000; // km'ye çevir
+
+          window.javaApp.addRestaurant(
+              place.name,
+              place.vicinity,
+              placeType,
+              place.rating || 0,
+              place.user_ratings_total || 0,
+              distance,
+              place.geometry.location.lat(),
+              place.geometry.location.lng(),
+              place.photos?.[0]?.getUrl({ maxWidth: 300, maxHeight: 200 }) || ''
+          );
+      }
+  }
+
+  // Java'dan çağrılacak fonksiyon
+  function updateUserLocation(lat, lng) {
+      userLocation = { lat, lng };
+      map.setCenter(userLocation);
+      loadPlaces();
+  }
 </script>
 
 <!-- API KEY'inizi buraya ekleyin -->
