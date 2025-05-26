@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Veri Toplayıcı - Otomatik Konum</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
+        #status {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+        }
+        .progress {
+            background: #e0e0e0;
+            height: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        .progress-bar {
+            background: #4CAF50;
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        #log {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+<div id="status">
+    <div class="loading">
+        <h3>📍 Yakındaki Mekanlar Aranıyor...</h3>
+        <div class="progress">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <p id="statusText">Konum bilgisi alınıyor...</p>
+    </div>
+    <div id="log"></div>
+</div>
+
+<div id="map" style="display: none; width: 1px; height: 1px;"></div>
+
+<script>
+    async function getLocation() {
+    try {
+      // IP-tabanlı konum servisi
+      const resp = await fetch('https://ipapi.co/json/');
+      if (!resp.ok) throw new Error(`IP servisi hata: ${resp.status}`);
+      const data = await resp.json();
+
+      return {
+        lat: parseFloat(data.latitude),
+        lng: parseFloat(data.longitude),
+        accuracy: null,       // IP servisleri hassasiyet vermez
+        source: 'ipapi.co'
+      };
+    } catch (err) {
+      console.error('IP tabanlı konum servisi hatası:', err);
+
+      // Servis başarısızsa test koordinatı
+      return {
+        lat: 41.0370,         // Taksim test koordinatı
+        lng: 28.9857,
+        accuracy: null,
+        source: 'test'
+      };
+    }
+  }
+      function updateStatus(message) {
+          document.getElementById('statusText').textContent = message;
+          addLog(message);
+      }
+
+      function addLog(message) {
+          const log = document.getElementById('log');
+          const time = new Date().toLocaleTimeString();
+          log.innerHTML += `<div>[${time}] ${message}</div>`;
+          log.scrollTop = log.scrollTop + 100;
+      }
+
+      function updateProgress() {
+          if (totalExpected > 0) {
+              const progress = (placesProcessed / totalExpected) * 100;
+              document.getElementById('progressBar').style.width = progress + '%';
+          }
+      }
+
+      let map;
+      let userLocation;
+      let placesFound = 0;
+      let placesProcessed = 0;
+      let totalExpected = 0;
+      const serviceTypes = ['cafe', 'restaurant'];
+
+      async function startDataCollection() {
+          updateStatus("Veri toplama başlatılıyor...");
+          placesFound = 0;
+          placesProcessed = 0;
+          totalExpected = 0;
+
+          try {
+              updateStatus("Konum alınıyor...");
+
+              // Konum alma işlemi
+              const location = await getLocation();
+              userLocation = {
+                  lat: location.lat,
+                  lng: location.lng
+              };
+
+              updateStatus(`✅ Konum başarıyla alındı: ${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)}`);
+              addLog(`Konum doğruluğu: ${location.accuracy} metre`);
+
+              // Java tarafına konum bilgisini gönder
+              if (window.javaController && window.javaController.onLocationSuccess) {
+                  window.javaController.onLocationSuccess(
+                      userLocation.lat,
+                      userLocation.lng,
+                      location.accuracy
+                  );
+              }
+
+              initializeMap();
+          } catch (error) {
+              updateStatus(`⚠️ Konum alınamadı: ${error.message}`);
+              addLog(`Hata detayı: ${error.message || error}`);
+
+              // Hata durumunda Java tarafına bildir
+              if (window.javaController && window.javaController.onLocationError) {
+                  window.javaController.onLocationError(error.message || "Konum alınamadı");
+              }
+
+              // Test konumu kullan
+              useTestLocation();
+          }
+      }
+
+      function useTestLocation() {
+          // Test için İstanbul Taksim koordinatları
+          userLocation = {
+              lat: 41.0370,
+              lng: 28.9857
+          };
+
+          updateStatus(`🧪 Test konumu kullanılıyor: Taksim, İstanbul`);
+          addLog(`Koordinatlar: ${userLocation.lat}, ${userLocation.lng}`);
+
+          initializeMap();
+      }
+
+      function initializeMap() {
+          try {
+              map = new google.maps.Map(document.getElementById("map"), {
+                  zoom: 15,
+                  center: userLocation,
+                  mapTypeId: google.maps.MapTypeId.ROADMAP
+              });
+
+              updateStatus("🗺️ Harita hazırlandı, mekan arama başlıyor...");
+
+              setTimeout(() => {
+                  searchPlaces();
+              }, 1000);
+
+          } catch (error) {
+              updateStatus("❌ Harita oluşturulamadı: " + error.message);
+              addLog("Harita hatası, test verisi ekleniyor...");
+              addAllTestData();
+          }
+      }
+
+      function searchPlaces() {
+          updateStatus("🔍 Yakındaki mekanlar aranıyor...");
+          let completedSearches = 0;
+
+          try {
+              serviceTypes.forEach((type, index) => {
+                  addLog(`${type.toUpperCase()} araması başlatılıyor...`);
+
+                  setTimeout(() => {
+                      const service = new google.maps.places.PlacesService(map);
+                      service.nearbySearch(
+                          {
+                              location: userLocation,
+                              radius: 2000,
+                              type: type
+                          },
+                          (results, status) => {
+                              completedSearches++;
+                              addLog(`${type.toUpperCase()} sonucu: ${status}`);
+
+                              if (status === "OK" && results) {
+                                  const validPlaces = results.filter(place =>
+                                      place.business_status === "OPERATIONAL" &&
+                                      place.name &&
+                                      place.geometry &&
+                                      place.geometry.location
+                                  );
+
+                                  totalExpected += validPlaces.length;
+                                  addLog(`${type.toUpperCase()}: ${validPlaces.length} mekan bulundu`);
+
+                                  validPlaces.forEach((place, placeIndex) => {
+                                      setTimeout(() => {
+                                          processPlaceWithDetails(place, type);
+                                      }, placeIndex * 200);
+                                  });
+                              } else {
+                                  addLog(`${type.toUpperCase()}: API hatası (${status})`);
+                                  addTestData(type);
+                              }
+
+                              if (completedSearches === serviceTypes.length) {
+                                  if (totalExpected === 0) {
+                                      updateStatus("🧪 API verisi alınamadı, test verisi kullanılıyor");
+                                      addAllTestData();
+                                  } else {
+                                      updateStatus(`📋 ${totalExpected} mekan bulundu, işleniyor...`);
+                                  }
+                              }
+                          }
+                      );
+                  }, index * 500);
+              });
+          } catch (error) {
+              updateStatus("❌ Arama hatası: " + error.message);
+              addAllTestData();
+          }
+      }
+
+      function processPlaceWithDetails(place, placeType) {
+          try {
+              const service = new google.maps.places.PlacesService(map);
+              service.getDetails(
+                  {
+                      placeId: place.place_id,
+                      fields: ['place_id', 'name', 'types', 'geometry', 'vicinity',
+                              'formatted_address', 'rating', 'user_ratings_total',
+                              'photos', 'opening_hours', 'business_status']
+                  },
+                  (placeDetails, status) => {
+                      placesProcessed++;
+                      updateProgress();
+
+                      if (status === "OK" && placeDetails) {
+                          sendPlaceToJava(placeDetails, placeType);
+                          placesFound++;
+                          addLog(`✅ ${placeDetails.name}`);
+                          calculateDistance(placeDetails);
+                      } else {
+                          addLog(`❌ ${place.name} (${status})`);
+                      }
+
+                      if (placesProcessed >= totalExpected) {
+                          updateStatus(`🎉 Tamamlandı! ${placesFound} mekan yüklendi`);
+                          setTimeout(() => {
+                              if (window.notifyDataLoadComplete) {
+                                  window.notifyDataLoadComplete();
+                              }
+                          }, 500);
+                      }
+                  }
+              );
+          } catch (error) {
+              placesProcessed++;
+              addLog(`❌ ${place.name}: ${error.message}`);
+              checkCompletion();
+          }
+      }
+
+      function calculateDistance(place, callback) {
+    try {
+        const directionsService = new google.maps.DirectionsService();
+        directionsService.route(
+            {
+                origin: userLocation,
+                destination: place.geometry.location,
+                travelMode: google.maps.TravelMode.DRIVING,
+                unitSystem: google.maps.UnitSystem.METRIC
+            },
+            (response, status) => {
+                if (status === "OK") {
+                    const distance = response.routes[0].legs[0].distance.value; // Metre cinsinden (sayısal)
+                    const duration = response.routes[0].legs[0].duration.text; // "5 mins" gibi
+                    callback(distance, duration);
+                } else {
+                    callback(null, null); // Hata durumunda null gönder
+                }
+            }
+        );
+    } catch (error) {
+        console.error("Mesafe hesaplama hatası:", error);
+        callback(null, null);
+    }
+}
+
+      function addTestData(type) {
+          const testPlaces = type === 'cafe' ? [
+              {
+                  place_id: 'test_cafe_1',
+                  name: 'Starbucks Taksim',
+                  geometry: { location: { lat: () => userLocation.lat + 0.001, lng: () => userLocation.lng + 0.001 } },
+                  vicinity: 'Taksim Meydanı',
+                  rating: 4.2,
+                  user_ratings_total: 320,
+                  photos: null,
+                  opening_hours: { open_now: true },
+                  business_status: "OPERATIONAL"
+              },
+              {
+                  place_id: 'test_cafe_2',
+                  name: 'Kahve Dünyası',
+                  geometry: { location: { lat: () => userLocation.lat - 0.001, lng: () => userLocation.lng - 0.001 } },
+                  vicinity: 'İstiklal Caddesi',
+                  rating: 4.0,
+                  user_ratings_total: 180,
+                  photos: null,
+                  opening_hours: { open_now: true },
+                  business_status: "OPERATIONAL"
+              }
+          ] : [
+              {
+                  place_id: 'test_restaurant_1',
+                  name: 'Pandeli Restaurant',
+                  geometry: { location: { lat: () => userLocation.lat + 0.0015, lng: () => userLocation.lng + 0.0005 } },
+                  vicinity: 'Eminönü',
+                  rating: 4.3,
+                  user_ratings_total: 450,
+                  photos: null,
+                  opening_hours: { open_now: true },
+                  business_status: "OPERATIONAL"
+              },
+              {
+                  place_id: 'test_restaurant_2',
+                  name: 'Nusr-Et Steakhouse',
+                  geometry: { location: { lat: () => userLocation.lat - 0.0015, lng: () => userLocation.lng + 0.002 } },
+                  vicinity: 'Etiler',
+                  rating: 4.5,
+                  user_ratings_total: 890,
+                  photos: null,
+                  opening_hours: { open_now: true },
+                  business_status: "OPERATIONAL"
+              }
+          ];
+
+          totalExpected += testPlaces.length;
+          addLog(`🧪 ${type.toUpperCase()}: ${testPlaces.length} test verisi`);
+
+          testPlaces.forEach((place, index) => {
+              setTimeout(() => {
+                  processPlace(place, type);
+              }, index * 300);
+          });
+      }
+
+      function addAllTestData() {
+          addTestData('cafe');
+          setTimeout(() => {
+              addTestData('restaurant');
+          }, 2000);
+      }
+
+      function processPlace(place, placeType) {
+    try {
+        const service = new google.maps.places.PlacesService(map);
+        service.getDetails(
+            {
+                placeId: place.place_id,
+                fields: ['place_id', 'name', 'types', 'geometry', 'vicinity',
+                        'formatted_address', 'rating', 'user_ratings_total',
+                        'photos', 'opening_hours', 'business_status']
+            },
+            (placeDetails, status) => {
+                placesProcessed++;
+                updateProgress();
+
+                if (status === "OK" && placeDetails) {
+                    // Uzaklık ve süre hesaplandıktan sonra Java'ya gönder
+                    calculateDistance(placeDetails, (distance, duration) => {
+                        sendPlaceToJava(placeDetails, placeType, distance, duration);
+                        placesFound++;
+                        addLog(`✅ ${placeDetails.name} (${distance ? distance + 'm' : 'Bilinmiyor'})`);
+                        checkCompletion();
+                    });
+                } else {
+                    addLog(`❌ ${place.name} (${status})`);
+                    checkCompletion();
+                }
+            }
+        );
+    } catch (error) {
+        placesProcessed++;
+        addLog(`❌ ${place.name}: ${error.message}`);
+        checkCompletion();
+    }
+}
+
+      function checkCompletion() {
+          if (placesProcessed >= totalExpected) {
+              updateStatus(`🎉 Tamamlandı! ${placesFound} mekan yüklendi`);
+              setTimeout(() => {
+                  if (window.notifyDataLoadComplete) {
+                      window.notifyDataLoadComplete();
+                  }
+              }, 500);
+          }
+      }
+
+      function sendPlaceToJava(place, placeType) {
+    try {
+        const placeData = {
+            id: place.place_id,
+            name: place.name || "İsimsiz Mekan",
+            type: placeType,
+            lat: place.geometry.location.lat(),
+            lng: place.geometry.location.lng(),
+            vicinity: place.vicinity || place.formatted_address || "Adres bilgisi yok",
+            rating: place.rating || 0,
+            totalRatings: place.user_ratings_total || 0,
+            photoUrl: (place.photos && place.photos[0]) ?
+                     place.photos[0].getUrl({ maxWidth: 300, maxHeight: 200 }) : "",
+            openNow: place.opening_hours ? place.opening_hours.open_now : false,
+            distance: null, // Hesaplandıktan sonra güncellenecek
+            duration: null  // Hesaplandıktan sonra güncellenecek
+        };
+
+        // Mesafe hesaplama işlemi
+        calculateDistance(place).then(({distance, duration}) => {
+            placeData.distance = distance;
+            placeData.duration = duration;
+            window.sendPlaceToJava(placeData);
+        });
+    } catch (error) {
+        console.error("Java'ya gönderim hatası:", error);
+    }
+}
+      // Otomatik başlatma
+      window.addEventListener('load', () => {
+          addLog("📱 Uygulama başlatılıyor...");
+          setTimeout(startDataCollection, 1000);
+      });
+
+      console.log("🚀 Otomatik konum izinli veri toplayıcı hazır");
+</script>
+
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA6WUm_MlnT4_M4tnfVnqTDd9f021ZInSo&libraries=places" async defer></script>
+</body>
+</html>
