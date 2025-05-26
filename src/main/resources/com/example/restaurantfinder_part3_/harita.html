@@ -1,299 +1,601 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Yakındaki Kafe ve Restoranlar</title>
+  <title>Veri Toplayıcı - Tarayıcı Konumu</title>
   <meta charset="utf-8">
   <style>
-    body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
-    #map { height: 100vh; width: 100%; }
-    .gm-style .info-window {
-        max-width: 300px !important;
-        padding: 10px;
+    body {
+        margin: 0;
+        padding: 20px;
+        font-family: Arial, sans-serif;
+        background: #f5f5f5;
     }
-    .place-image {
-        width: 100%;
-        height: 150px;
-        object-fit: cover;
-        border-radius: 4px;
-        margin-bottom: 10px;
+    #status {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        max-width: 600px;
+        margin: 0 auto 20px auto;
     }
-    .directions-btn {
-        background: #4285F4;
-        color: white;
-        border: none;
-        padding: 8px;
-        margin-top: 10px;
-        cursor: pointer;
-        border-radius: 4px;
-        width: 100%;
+    .loading {
+        text-align: center;
+        color: #666;
     }
-    .distance-info {
-        background: #f8f9fa;
-        padding: 8px;
-        border-radius: 4px;
+    .progress {
+        background: #e0e0e0;
+        height: 10px;
+        border-radius: 5px;
         margin: 10px 0;
-        font-size: 14px;
+        overflow: hidden;
     }
-    .place-type {
-        color: #6c757d;
-        font-size: 14px;
-        margin: 5px 0;
+    .progress-bar {
+        background: #4CAF50;
+        height: 100%;
+        width: 0%;
+        transition: width 0.3s ease;
     }
-    .highlighted-marker {
-        animation: bounce 1s infinite;
+    #log {
+        margin-top: 20px;
+        padding: 10px;
+        background: #f9f9f9;
+        border-radius: 4px;
+        max-height: 300px;
+        overflow-y: auto;
+        font-size: 12px;
     }
-    @keyframes bounce {
-        0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
-        40% { transform: translateY(-10px); }
-        60% { transform: translateY(-5px); }
+    .error { color: red; }
+    .success { color: green; }
+    .info { color: blue; }
+
+    /* Harita stilleri */
+    #mapContainer {
+        display: none;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin: 0 auto;
+        max-width: 1000px;
+    }
+
+    #mapContainer.show {
+        display: block;
+    }
+
+    #map {
+        width: 100%;
+        height: 500px;
+    }
+
+    #mapHeader {
+        background: #2196F3;
+        color: white;
+        padding: 15px;
+        text-align: center;
+    }
+
+    #mapStats {
+        background: #f8f9fa;
+        padding: 15px;
+        display: flex;
+        justify-content: space-around;
+        text-align: center;
+        border-top: 1px solid #e0e0e0;
+    }
+
+    .stat-item {
+        flex: 1;
+        padding: 0 10px;
+    }
+
+    .stat-number {
+        font-size: 24px;
+        font-weight: bold;
+        color: #2196F3;
+    }
+
+    .stat-label {
+        font-size: 12px;
+        color: #666;
+        margin-top: 5px;
+    }
+
+    /* Custom marker stilleri */
+    .custom-marker {
+        background: #4CAF50;
+        border: 3px solid white;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .user-marker {
+        background: #FF5722;
+        width: 25px;
+        height: 25px;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        body { padding: 10px; }
+        #status { margin: 0 0 10px 0; }
+        #map { height: 400px; }
+        #mapStats {
+            flex-direction: column;
+            gap: 10px;
+        }
     }
   </style>
 </head>
 <body>
-<div id="map"></div>
+<div id="status">
+  <div class="loading">
+    <h3>📍 Konum Alınıyor...</h3>
+    <div class="progress">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <p id="statusText">Konum bilgisi alınıyor...</p>
+  </div>
+  <div id="log"></div>
+</div>
+
+<!-- Harita Konteyneri -->
+<div id="mapContainer">
+  <div id="mapHeader">
+    <h3>🗺️ Yakınımdaki Mekanlar</h3>
+    <p id="locationInfo">Konum bilgisi yükleniyor...</p>
+  </div>
+  <div id="map"></div>
+  <div id="mapStats">
+    <div class="stat-item">
+      <div class="stat-number" id="cafeCount">0</div>
+      <div class="stat-label">Kafe</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number" id="restaurantCount">0</div>
+      <div class="stat-label">Restoran</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number" id="totalCount">0</div>
+      <div class="stat-label">Toplam Mekan</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number" id="avgRating">0</div>
+      <div class="stat-label">Ortalama Puan</div>
+    </div>
+  </div>
+</div>
 
 <script>
+  console.log("🚀 Sayfa yüklendi, bağlantılar test ediliyor...");
+
+  // WebSocket bağlantısı
+  let socket;
+  let socketConnected = false;
+
+  function initWebSocket() {
+    try {
+      socket = new WebSocket('ws://localhost:8081');
+
+      socket.onopen = function() {
+        console.log("✅ WebSocket bağlantısı başarılı");
+        addLog("✅ WebSocket bağlantısı kuruldu", "success");
+        socketConnected = true;
+
+        // Test mesajı gönder
+        testWebSocketConnection();
+      };
+
+      socket.onmessage = function(event) {
+        console.log("📨 WebSocket mesajı alındı:", event.data);
+        addLog("📨 WebSocket mesajı: " + event.data, "info");
+      };
+
+      socket.onclose = function() {
+        console.log("❌ WebSocket bağlantısı kapandı");
+        addLog("❌ WebSocket bağlantısı kapandı", "error");
+        socketConnected = false;
+      };
+
+      socket.onerror = function(error) {
+        console.error("❌ WebSocket hatası:", error);
+        addLog("❌ WebSocket hatası: " + error, "error");
+        socketConnected = false;
+      };
+    } catch (e) {
+      console.error("❌ WebSocket oluşturma hatası:", e);
+      addLog("❌ WebSocket oluşturma hatası: " + e.message, "error");
+    }
+  }
+
+  function testWebSocketConnection() {
+    const testData = {
+      id: "test_" + Date.now(),
+      name: "Test Mekan",
+      type: "cafe",
+      lat: 41.0082,
+      lng: 28.9784,
+      vicinity: "Test Adres",
+      rating: 4.5,
+      totalRatings: 100,
+      photoUrl: "",
+      openNow: true,
+      distance: 500,
+      duration: "5 mins"
+    };
+
+    if (socketConnected && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(testData));
+      console.log("🧪 Test verisi WebSocket ile gönderildi:", testData);
+      addLog("🧪 Test verisi gönderildi: " + testData.name, "info");
+    } else {
+      console.error("❌ WebSocket bağlantısı yok, test verisi gönderilemedi");
+      addLog("❌ WebSocket bağlantısı yok", "error");
+    }
+  }
+
+  function sendPlaceToJava(placeData) {
+    console.log("📤 Java'ya gönderiliyor:", placeData.name);
+
+    // WebSocket ile gönder
+    if (socketConnected && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(placeData));
+      addLog("📤 Gönderildi: " + placeData.name, "success");
+      return true;
+    } else {
+      console.error("❌ WebSocket bağlantısı yok!");
+      addLog("❌ WebSocket bağlantısı yok: " + placeData.name, "error");
+      return false;
+    }
+  }
+
+  function updateStatus(message) {
+      document.getElementById('statusText').textContent = message;
+      addLog(message, "info");
+  }
+
+  function addLog(message, type = "info") {
+      const log = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      const className = type || "info";
+      log.innerHTML += `<div class="${className}">[${time}] ${message}</div>`;
+      log.scrollTop = log.scrollHeight;
+  }
+
+  function updateProgress() {
+      if (totalExpected > 0) {
+          const progress = (placesProcessed / totalExpected) * 100;
+          document.getElementById('progressBar').style.width = progress + '%';
+      }
+  }
+
   let map;
   let userLocation;
-  let infoWindow;
-  let directionsService;
-  let allMarkers = new Map(); // Tüm marker'ları sakla
-  let highlightedMarker = null;
+  let placesFound = 0;
+  let placesProcessed = 0;
+  let totalExpected = 0;
+  let allPlaces = []; // Tüm mekanları saklayacak dizi
   const serviceTypes = ['cafe', 'restaurant'];
 
-  function initMap() {
-      map = new google.maps.Map(document.getElementById("map"), {
-          zoom: 15,
-          mapTypeControl: false
-      });
+  function startDataCollection() {
+      updateStatus("Konum alınıyor...");
+      addLog("📍 Geolocation API'si çağrılıyor...", "info");
 
-      infoWindow = new google.maps.InfoWindow();
-      directionsService = new google.maps.DirectionsService();
-
-      if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-              position => {
-                  userLocation = {
-                      lat: position.coords.latitude,
-                      lng: position.coords.longitude
-                  };
-
-                  map.setCenter(userLocation);
-
-                  // Kullanıcı konum işaretçisi
-                  new google.maps.Marker({
-                      position: userLocation,
-                      map,
-                      title: "Mevcut Konumunuz",
-                      icon: {
-                          path: google.maps.SymbolPath.CIRCLE,
-                          scale: 8,
-                          fillColor: "#4285F4",
-                          fillOpacity: 1,
-                          strokeWeight: 2,
-                          strokeColor: "white"
-                      }
-                  });
-
-                  // Mekanları yükle
-                  loadPlaces();
-              },
-              error => {
-                  handleLocationError(true);
-              }
-          );
-      } else {
-          handleLocationError(false);
+      if (!navigator.geolocation) {
+          addLog("❌ Geolocation desteklenmiyor", "error");
+          updateStatus("❌ Tarayıcınız konum hizmetini desteklemiyor");
+          return;
       }
-  }
 
-  function loadPlaces() {
-      console.log("Mekanlar yükleniyor...");
+      navigator.geolocation.getCurrentPosition(
+          (position) => {
+              userLocation = {
+                  lat: position.coords.latitude,
+                  lng: position.coords.longitude
+              };
+              updateStatus(`✅ Konum başarıyla alındı: ${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)}`);
+              addLog(`📍 Konum: ${userLocation.lat}, ${userLocation.lng}`, "success");
 
-      serviceTypes.forEach(type => {
-          const service = new google.maps.places.PlacesService(map);
-          service.nearbySearch(
-              {
-                  location: userLocation,
-                  radius: 1000,
-                  type: type,
-                  openNow: true // Sadece açık olanlar
-              },
-              (results, status) => {
-                  if (status === "OK" && results) {
-                      console.log(`${type} türünde ${results.length} mekan bulundu`);
-                      results.forEach(place => {
-                          if (place.business_status === "OPERATIONAL") {
-                              createMarker(place, type);
-                              sendPlaceToJava(place, type);
-                          }
-                      });
-                  }
-              }
-          );
-      });
-  }
-
-  function createMarker(place, placeType) {
-      if (!place.geometry?.location) return;
-
-      const marker = new google.maps.Marker({
-          map,
-          position: place.geometry.location,
-          title: place.name,
-          icon: {
-              url: `https://maps.google.com/mapfiles/ms/icons/${placeType === 'cafe' ? 'orange' : 'green'}-dot.png`
-          }
-      });
-
-      // Marker'ı Map'e kaydet
-      allMarkers.set(place.place_id, marker);
-
-      marker.addListener("click", () => {
-          showPlaceDetails(place, marker);
-      });
-  }
-
-  function sendPlaceToJava(place, placeType) {
-      // Java'ya mekan bilgilerini gönder
-      if (window.javaController && window.sendPlaceToJava) {
-          const placeData = {
-              id: place.place_id,
-              name: place.name || "İsimsiz Mekan",
-              type: placeType,
-              lat: place.geometry.location.lat(),
-              lng: place.geometry.location.lng(),
-              vicinity: place.vicinity || "Adres bilgisi yok",
-              rating: place.rating || 0,
-              totalRatings: place.user_ratings_total || 0,
-              photoUrl: place.photos && place.photos[0] ?
-                       place.photos[0].getUrl({ maxWidth: 300, maxHeight: 200 }) : "",
-              openNow: place.opening_hours ? place.opening_hours.open_now : false
-          };
-
-          window.sendPlaceToJava(placeData);
-          console.log("Java'ya gönderildi:", place.name);
-      }
-  }
-
-  async function showPlaceDetails(place, marker) {
-      try {
-          // Place Details API'den detayları çek
-          const service = new google.maps.places.PlacesService(map);
-          service.getDetails({ placeId: place.place_id }, (placeDetails, status) => {
-              if (status === "OK") {
-                  const content = buildInfoWindowContent(placeDetails);
-                  infoWindow.setContent(content);
-                  infoWindow.open(map, marker);
-                  calculateDistance(placeDetails.geometry.location, placeDetails.place_id);
-              }
-          });
-      } catch (error) {
-          console.error("Detaylar yüklenemedi:", error);
-      }
-  }
-
-  function buildInfoWindowContent(place) {
-      const type = place.types?.includes('cafe') ? 'Kafe' : 'Restoran';
-      const photo = place.photos?.[0]?.getUrl({ maxWidth: 300, maxHeight: 200 }) || '';
-      const rating = place.rating ? `⭐ ${place.rating}/5 (${place.user_ratings_total} değerlendirme)` : 'Değerlendirme yok';
-
-      return `
-          <div class="info-window">
-              ${photo ? `<img class="place-image" src="${photo}" alt="${place.name}">` : ''}
-              <h3 style="margin:10px 0">${place.name}</h3>
-              <div class="place-type">${type}</div>
-              <p>📍 ${place.vicinity}</p>
-              <p>${rating}</p>
-              <div class="distance-info" id="distance-info-${place.place_id}">
-                  <span>⏳ Mesafe hesaplanıyor...</span>
-              </div>
-              <button class="directions-btn"
-                  onclick="window.open(
-                      'https://www.google.com/maps/dir/?api=1&destination=${place.geometry.location.lat()},${place.geometry.location.lng()}',
-                      '_blank'
-                  )">🚗 Yol Tarifi Al</button>
-          </div>
-      `;
-  }
-
-  function calculateDistance(destination, placeId) {
-      directionsService.route(
-          {
-              origin: userLocation,
-              destination: destination,
-              travelMode: google.maps.TravelMode.DRIVING,
-              unitSystem: google.maps.UnitSystem.METRIC
+              initializeMap();
           },
-          (response, status) => {
-              const distanceElement = document.getElementById(`distance-info-${placeId}`);
-              if (status === "OK") {
-                  const distance = response.routes[0].legs[0].distance.text;
-                  const duration = response.routes[0].legs[0].duration.text;
+          (error) => {
+              updateStatus("❌ Konum alınamadı: " + error.message);
+              addLog(`❌ Geolocation hatası: ${error.message}`, "error");
 
-                  if (distanceElement) {
-                      distanceElement.innerHTML = `
-                          <div>📏 Mesafe: ${distance}</div>
-                          <div>⏱️ Tahmini Süre: ${duration}</div>
-                      `;
-                  }
-
-                  // Java'ya mesafe bilgisini gönder
-                  if (window.javaController && window.updateDistanceInJava) {
-                      window.updateDistanceInJava(placeId, distance, duration);
-                  }
-              } else {
-                  if (distanceElement) {
-                      distanceElement.innerHTML = "Mesafe bilgisi alınamadı";
-                  }
-              }
+              // Test için varsayılan konum kullan
+              userLocation = { lat: 41.0082, lng: 28.9784 }; // İstanbul
+              addLog("🧪 Test için varsayılan konum kullanılıyor: İstanbul", "info");
+              initializeMap();
+          },
+          {
+              enableHighAccuracy: true,
+              timeout: 15000,
+              maximumAge: 60000
           }
       );
   }
 
-  // Java'dan çağrılacak fonksiyon - Haritada mekanı vurgula
-  function highlightPlace(placeId, lat, lng) {
-      // Önceki vurgulaması kaldır
-      if (highlightedMarker) {
-          highlightedMarker.setAnimation(null);
+  function initializeMap() {
+      if (!window.google || !window.google.maps) {
+          addLog("❌ Google Maps API yüklenmedi", "error");
+          updateStatus("❌ Google Maps API yüklenemedi");
+          return;
       }
 
-      // Yeni mekanı vurgula
-      const marker = allMarkers.get(placeId);
-      if (marker) {
-          highlightedMarker = marker;
-          marker.setAnimation(google.maps.Animation.BOUNCE);
+      try {
+          // Küçük harita oluştur (veri toplama sırasında gizli)
+          map = new google.maps.Map(document.getElementById("map"), {
+              zoom: 15,
+              center: userLocation,
+              mapTypeId: google.maps.MapTypeId.ROADMAP,
+              styles: [
+                {
+                  featureType: "poi.business",
+                  stylers: [{ visibility: "off" }]
+                }
+              ]
+          });
 
-          // Haritayı merkeze getir
-          map.panTo(new google.maps.LatLng(lat, lng));
-          map.setZoom(17);
+          updateStatus("🗺️ Harita hazır, mekan araması başlatılıyor...");
+          addLog("🗺️ Google Maps başarıyla yüklendi", "success");
 
-          // 3 saniye sonra animasyonu durdur
+          setTimeout(searchPlaces, 1000);
+      } catch (e) {
+          addLog("❌ Harita yükleme hatası: " + e.message, "error");
+          updateStatus("❌ Harita yüklenemedi");
+      }
+  }
+
+  function searchPlaces() {
+      if (!map) {
+          addLog("❌ Harita hazır değil", "error");
+          return;
+      }
+
+      let completedSearches = 0;
+      addLog(`🔍 ${serviceTypes.length} farklı mekan türü aranacak`, "info");
+
+      serviceTypes.forEach((type, index) => {
+          addLog(`🔍 ${type.toUpperCase()} aranıyor...`, "info");
+
           setTimeout(() => {
-              if (marker === highlightedMarker) {
-                  marker.setAnimation(null);
+              const service = new google.maps.places.PlacesService(map);
+              service.nearbySearch({
+                  location: userLocation,
+                  radius: 2000,
+                  type: type
+              }, (results, status) => {
+                  completedSearches++;
+                  addLog(`📍 ${type.toUpperCase()} sonucu: ${status}`, "info");
+
+                  if (status === "OK" && results) {
+                      const validPlaces = results.filter(place =>
+                          place.business_status === "OPERATIONAL" &&
+                          place.name && place.geometry?.location
+                      );
+
+                      totalExpected += validPlaces.length;
+                      addLog(`✅ ${type.toUpperCase()}: ${validPlaces.length} geçerli sonuç`, "success");
+
+                      validPlaces.forEach((place, i) => {
+                          setTimeout(() => processPlace(place, type), i * 300);
+                      });
+                  } else {
+                      addLog(`❌ ${type.toUpperCase()} araması başarısız: ${status}`, "error");
+                  }
+
+                  if (completedSearches === serviceTypes.length) {
+                      updateStatus(`📋 ${totalExpected} mekan işleniyor...`);
+                      addLog(`📊 Toplam ${totalExpected} mekan detayları alınacak`, "info");
+                  }
+              });
+          }, index * 1000);
+      });
+  }
+
+  function processPlace(place, placeType) {
+      const service = new google.maps.places.PlacesService(map);
+      service.getDetails({
+          placeId: place.place_id,
+          fields: ['place_id', 'name', 'geometry', 'vicinity', 'rating', 'user_ratings_total', 'photos', 'opening_hours', 'business_status']
+      }, (details, status) => {
+          placesProcessed++;
+          updateProgress();
+
+          if (status === "OK" && details) {
+              addLog(`🏪 Detay alındı: ${details.name}`, "info");
+
+              calculateDistance(details, (distance, duration) => {
+                  const placeData = createPlaceData(details, placeType, distance, duration);
+                  allPlaces.push(placeData); // Mekanı diziye ekle
+
+                  const success = sendPlaceToJava(placeData);
+                  if (success) {
+                      placesFound++;
+                  }
+                  checkCompletion();
+              });
+          } else {
+              addLog(`❌ ${place.name} detayları alınamadı (${status})`, "error");
+              checkCompletion();
+          }
+      });
+  }
+
+  function calculateDistance(place, callback) {
+      const directionsService = new google.maps.DirectionsService();
+      directionsService.route({
+          origin: userLocation,
+          destination: place.geometry.location,
+          travelMode: google.maps.TravelMode.DRIVING
+      }, (response, status) => {
+          if (status === "OK") {
+              const leg = response.routes[0].legs[0];
+              callback(leg.distance.value, leg.duration.text);
+          } else {
+              addLog(`⚠️ ${place.name} mesafe hesaplanamadı`, "error");
+              callback(null, null);
+          }
+      });
+  }
+
+  function createPlaceData(place, type, distance, duration) {
+      return {
+          id: place.place_id,
+          name: place.name,
+          type: type,
+          lat: place.geometry.location.lat(),
+          lng: place.geometry.location.lng(),
+          vicinity: place.vicinity || "Bilinmiyor",
+          rating: place.rating || 0,
+          totalRatings: place.user_ratings_total || 0,
+          photoUrl: (place.photos?.[0]) ? place.photos[0].getUrl({ maxWidth: 300 }) : "",
+          openNow: place.opening_hours?.open_now || false,
+          distance: distance,
+          duration: duration
+      };
+  }
+
+  function checkCompletion() {
+      if (placesProcessed >= totalExpected && totalExpected > 0) {
+          updateStatus(`🎉 Tamamlandı! ${placesFound} mekan Java'ya yüklendi`);
+          addLog(`📊 İşlem tamamlandı: ${placesFound}/${totalExpected} başarılı`, "success");
+
+          // Haritayı göster ve güncelle
+          setTimeout(() => {
+              showFinalMap();
+
+              if (window.notifyDataLoadComplete) {
+                  window.notifyDataLoadComplete();
               }
-          }, 3000);
+          }, 500);
       }
   }
 
-  function handleLocationError(browserHasGeolocation) {
-      const content = browserHasGeolocation
-          ? "Konum erişimine izin vermeniz gerekiyor"
-          : "Tarayıcınız konum desteği sunmuyor";
+  function showFinalMap() {
+      addLog("🗺️ Harita hazırlanıyor...", "info");
 
-      infoWindow.setContent(content);
-      infoWindow.open(map);
+      // Harita konteynerini göster
+      const mapContainer = document.getElementById('mapContainer');
+      mapContainer.classList.add('show');
+
+      // Konum bilgisini güncelle
+      document.getElementById('locationInfo').textContent =
+          `Enlem: ${userLocation.lat.toFixed(6)}, Boylam: ${userLocation.lng.toFixed(6)}`;
+
+      // Haritayı yeniden boyutlandır
+      google.maps.event.trigger(map, 'resize');
+
+      // Kullanıcı konumu marker'ı
+      new google.maps.Marker({
+          position: userLocation,
+          map: map,
+          title: "Mevcut Konumunuz",
+          icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 12,
+              fillColor: '#FF5722',
+              fillOpacity: 1,
+              strokeColor: '#FFFFFF',
+              strokeWeight: 3
+          }
+      });
+
+      // Mekan marker'larını ekle
+      let bounds = new google.maps.LatLngBounds();
+      bounds.extend(userLocation);
+
+      allPlaces.forEach(place => {
+          const position = new google.maps.LatLng(place.lat, place.lng);
+
+          const marker = new google.maps.Marker({
+              position: position,
+              map: map,
+              title: place.name,
+              icon: {
+                  path: google.maps.SymbolPath.CIRCLE,
+                  scale: 8,
+                  fillColor: place.type === 'cafe' ? '#8BC34A' : '#FF9800',
+                  fillOpacity: 1,
+                  strokeColor: '#FFFFFF',
+                  strokeWeight: 2
+              }
+          });
+
+          // Info window
+          const infoWindow = new google.maps.InfoWindow({
+              content: `
+                  <div style="padding: 10px; max-width: 200px;">
+                      <h4 style="margin: 0 0 5px 0;">${place.name}</h4>
+                      <p style="margin: 0; color: #666; font-size: 12px;">${place.vicinity}</p>
+                      <div style="margin: 5px 0;">
+                          <span style="background: ${place.type === 'cafe' ? '#8BC34A' : '#FF9800'};
+                                       color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px;">
+                              ${place.type === 'cafe' ? '☕ Kafe' : '🍽️ Restoran'}
+                          </span>
+                      </div>
+                      ${place.rating > 0 ? `<div>⭐ ${place.rating}/5 (${place.totalRatings} değerlendirme)</div>` : ''}
+                      ${place.duration ? `<div>🚗 ${place.duration}</div>` : ''}
+                      <div style="color: ${place.openNow ? 'green' : 'red'}; font-size: 12px;">
+                          ${place.openNow ? '🟢 Açık' : '🔴 Kapalı'}
+                      </div>
+                  </div>
+              `
+          });
+
+          marker.addListener('click', () => {
+              infoWindow.open(map, marker);
+          });
+
+          bounds.extend(position);
+      });
+
+      // Harita görünümünü ayarla
+      map.fitBounds(bounds);
+      map.setZoom(Math.min(map.getZoom(), 16));
+
+      // İstatistikleri güncelle
+      updateMapStats();
+
+      addLog(`🗺️ Harita ${allPlaces.length} mekan ile güncellendi`, "success");
   }
 
-  // Konsol logları için global erişim
-  window.getAllMarkers = () => allMarkers;
-  window.getUserLocation = () => userLocation;
+  function updateMapStats() {
+      const cafeCount = allPlaces.filter(p => p.type === 'cafe').length;
+      const restaurantCount = allPlaces.filter(p => p.type === 'restaurant').length;
+      const totalCount = allPlaces.length;
+      const avgRating = totalCount > 0 ?
+          (allPlaces.reduce((sum, p) => sum + (p.rating || 0), 0) / totalCount).toFixed(1) : 0;
 
-  console.log("Harita scripti yüklendi");
+      document.getElementById('cafeCount').textContent = cafeCount;
+      document.getElementById('restaurantCount').textContent = restaurantCount;
+      document.getElementById('totalCount').textContent = totalCount;
+      document.getElementById('avgRating').textContent = avgRating;
+  }
+
+  // Sayfa yüklendiğinde başlat
+  window.addEventListener('load', () => {
+      addLog("🚀 Sayfa yüklendi, bağlantılar başlatılıyor...", "info");
+
+      // WebSocket bağlantısını başlat
+      initWebSocket();
+
+      // Veri toplamayı başlat
+      setTimeout(startDataCollection, 2000);
+  });
+
+  // Test butonları için global fonksiyonlar
+  window.testConnection = testWebSocketConnection;
+
+  // Manuel test başlatma
+  setTimeout(() => {
+      console.log("🧪 5 saniye sonra manuel test başlatılacak...");
+      addLog("🧪 Manuel test 5 saniye sonra başlatılacak", "info");
+  }, 5000);
 </script>
 
-<!-- API KEY'inizi buraya ekleyin -->
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA6WUm_MlnT4_M4tnfVnqTDd9f021ZInSo&libraries=places&callback=initMap" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA6WUm_MlnT4_M4tnfVnqTDd9f021ZInSo&libraries=places" async defer></script>
 </body>
 </html>

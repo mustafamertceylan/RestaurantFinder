@@ -11,6 +11,9 @@ module com.example.restaurantfinder_part3_ {
     requires eu.hansolo.tilesfx;
     requires jdk.jsobject;
     requires java.desktop;
+    requires jdk.httpserver;
+    requires Java.WebSocket;
+    requires org.json;
 
     opens com.example.restaurantfinder_part3_ to javafx.fxml;
     exports com.example.restaurantfinder_part3_;

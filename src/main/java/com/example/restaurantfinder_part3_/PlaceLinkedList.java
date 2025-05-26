@@ -2,43 +2,24 @@ package com.example.restaurantfinder_part3_;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
 
-public class PlaceLinkedList implements Iterable<Place> {
+public class PlaceLinkedList {
+    private Node head;
+    private int size;
 
-    // Node sınıfı - her bir mekan için
-    private class Node {
+    // Node inner class
+    private static class Node {
         Place data;
         Node next;
 
         Node(Place data) {
             this.data = data;
-            this.next = null;
         }
     }
 
-    private Node head;
-    private int size;
-
-
-    public PlaceLinkedList() {
-        head = null;
-        size = 0;
-    }
-
-    // Liste başına ekleme
-    public void addFirst(Place place) {
+    // Add a place to the end of the list
+    public void add(Place place) {
         Node newNode = new Node(place);
-        newNode.next = head;
-        head = newNode;
-        size++;
-    }
-
-    // Liste sonuna ekleme
-    public void addLast(Place place) {
-        Node newNode = new Node(place);
-
         if (head == null) {
             head = newNode;
         } else {
@@ -51,167 +32,100 @@ public class PlaceLinkedList implements Iterable<Place> {
         size++;
     }
 
-    // ID'ye göre arama
-    public Place findById(String name) {
+    // Add a place at the end (alias for add)
+    public void addLast(Place place) {
+        add(place);
+    }
+
+    // Check if list contains a place with given ID
+    public boolean contains(String id) {
         Node current = head;
         while (current != null) {
-            if (current.data.getName().equals(name)) {
-                return current.data;
-            }
-            current = current.next;
-        }
-        return null;
-    }
-
-    // İsme göre arama
-    public Place findByName(String name) {
-        Node current = head;
-        while (current != null) {
-            if (current.data.getName().equalsIgnoreCase(name)) {
-                return current.data;
-            }
-            current = current.next;
-        }
-        return null;
-    }
-    public int indexOf(Place place) {
-        Node current = head;
-        int index = 0;
-        while (current != null) {
-            if (current.data.equals(place)) {
-                return index;
-            }
-            current = current.next;
-            index++;
-        }
-        return -1;
-    }
-
-    // Türe göre filtreleme
-    public PlaceLinkedList filterByType(String type) {
-        PlaceLinkedList filteredList = new PlaceLinkedList();
-        Node current = head;
-
-        while (current != null) {
-            if (current.data.getType().equals(type)) {
-                filteredList.addLast(current.data);
-            }
-            current = current.next;
-        }
-
-        return filteredList;
-    }
-
-    // Rating'e göre sıralama (basit bubble sort)
-    public void sortByRating() {
-        if (size <= 1) return;
-
-        boolean swapped;
-        do {
-            swapped = false;
-            Node current = head;
-
-            while (current.next != null) {
-                if (current.data.getRating() < current.next.data.getRating()) {
-                    // Swap data
-                    Place temp = current.data;
-                    current.data = current.next.data;
-                    current.next.data = temp;
-                    swapped = true;
-                }
-                current = current.next;
-            }
-        } while (swapped);
-    }
-
-    // ID'ye göre silme
-    public boolean removeById(String id) {
-        if (head == null) return false;
-
-        if (head.data.getId().equals(id)) {
-            head = head.next;
-            size--;
-            return true;
-        }
-
-        Node current = head;
-        while (current.next != null) {
-            if (current.next.data.getId().equals(id)) {
-                current.next = current.next.next;
-                size--;
+            if (current.data.getId().equals(id)) {
                 return true;
             }
             current = current.next;
         }
-
         return false;
     }
 
-    // Listeyi temizle
+    // Clear the list
     public void clear() {
         head = null;
         size = 0;
     }
 
-    // Liste boyutu
-    public int size() {
-        return size;
-    }
-
-    // Liste boş mu?
+    // Check if list is empty
     public boolean isEmpty() {
         return head == null;
     }
 
-    // JavaFX ListView için ObservableList'e dönüştürme
+    // Get the size of the list
+    public int size() {
+        return size;
+    }
+
+    // Convert to ObservableList for JavaFX
     public ObservableList<Place> toObservableList() {
-        ObservableList<Place> list = FXCollections.observableArrayList();
+        ObservableList<Place> result = FXCollections.observableArrayList();
         Node current = head;
-
         while (current != null) {
-            list.add(current.data);
+            result.add(current.data);
             current = current.next;
         }
-
-        return list;
+        return result;
     }
 
-    // Iterator implementasyonu
-    @Override
-    public Iterator<Place> iterator() {
-        return new PlaceIterator();
-    }
-
-    private class PlaceIterator implements Iterator<Place> {
-        private Node current = head;
-
-        @Override
-        public boolean hasNext() {
-            return current != null;
+    // For each implementation
+    public void forEach(PlaceConsumer action) {
+        Node current = head;
+        while (current != null) {
+            action.accept(current.data);
+            current = current.next;
         }
+    }
 
-        @Override
-        public Place next() {
-            if (!hasNext()) {
-                throw new NoSuchElementException();
+    // Sort the list using a comparator
+    public void sort(PlaceComparator comparator) {
+        if (head == null || head.next == null) return;
+
+        boolean swapped;
+        do {
+            swapped = false;
+            Node previous = null;
+            Node current = head;
+            Node next = head.next;
+
+            while (next != null) {
+                if (comparator.compare(current.data, next.data) > 0) {
+                    // Swap nodes
+                    if (previous == null) {
+                        head = next;
+                    } else {
+                        previous.next = next;
+                    }
+                    current.next = next.next;
+                    next.next = current;
+
+                    previous = next;
+                    next = current.next;
+                    swapped = true;
+                } else {
+                    previous = current;
+                    current = next;
+                    next = next.next;
+                }
             }
-            Place data = current.data;
-            current = current.next;
-            return data;
-        }
+        } while (swapped);
     }
 
-    @Override
-    public String toString() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("PlaceLinkedList [size=").append(size).append("]\n");
+    @FunctionalInterface
+    public interface PlaceConsumer {
+        void accept(Place place);
+    }
 
-        Node current = head;
-        while (current != null) {
-            sb.append("- ").append(current.data.toString()).append("\n");
-            current = current.next;
-        }
-
-        return sb.toString();
+    @FunctionalInterface
+    public interface PlaceComparator {
+        int compare(Place p1, Place p2);
     }
 }
